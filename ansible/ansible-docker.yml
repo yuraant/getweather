@@ -1,0 +1,55 @@
+---
+- name: deploy docker on VM and run app getwether
+  hosts: all
+
+  tasks:
+  - name: Update apt
+    apt:
+      force_apt_get: yes
+      update_cache: yes
+      cache_valid_time: 86400
+    become: true
+  
+  - name: install Docker-ce
+    apt:
+      name: docker.io
+      state: present
+    become: true
+    
+  
+  - name: Configure Docker syslog
+    template:
+      src: 'daemon.json'
+      dest: '/etc/docker/daemon.json'
+      owner: 'root'
+      group: 'root'
+      mode: '0644'
+    become: true
+
+  - name: Restart docker
+    service:
+      name: 'docker'
+      state: 'restarted'
+    become: true
+  
+  - name: Get app from GitHub
+    git:
+      repo: 'https://github.com/yuraant/getweather.git'
+      dest: /tmp/getweather  
+  
+  # I use shell to avoid configuration docker-py for ansible module docker_image
+  - name: Build docker image from sources
+    shell: docker build -t weather:dev .
+    args:
+      chdir: /tmp/getweather/
+    become: true
+
+  - name: Run docker container weather:dev
+    shell: docker run --rm -e OPENWEATHER_API_KEY="{{ OPENWEATHER_API_KEY }}" -e CITY_NAME="{{ CITY_NAME }}" weather:dev
+    become: true
+  
+  - name: Show result from syslog
+    shell: grep openweathermap  /var/log/syslog | grep  -v "python3" | tail -1
+    register: syslog
+  - debug: msg="{{ syslog.stdout }}"
+  
